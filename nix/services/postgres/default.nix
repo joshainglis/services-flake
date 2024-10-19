@@ -322,8 +322,8 @@ in
               in
               {
                 command = startScript;
-                # SIGINT (= 2) for faster shutdown: https://www.postgresql.org/docs/current/server-shutdown.html
-                shutdown.signal = 2;
+                is_daemon = true;
+                shutdown.command = "${config.package}/bin/pg_ctl -D ${config.dataDir} stop -m smart -w";
                 readiness_probe = {
                   exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
                 };
