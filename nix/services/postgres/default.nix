@@ -308,9 +308,9 @@ in
                     export PGDATA
                     ${ if config.socketDir != "" then ''
                       PGSOCKETDIR=$(readlink -f "${config.socketDir}")
-                      postgres -k "$PGSOCKETDIR"
+                      pg_ctl -D $PGDATA -o "-h $PGSOCKETDIR" -l $PGDATA/logfile start
                     '' else ''
-                      postgres
+                      pg_ctl -D $PGDATA -l $PGDATA/logfile start
                     ''}
                   '';
                 };
