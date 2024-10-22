@@ -294,6 +294,8 @@ in
               in
               {
                 command = setupScript;
+                availability.restart = "exit_on_failure";
+                shutdown = { signal = 15; parent_only = false; };
               };
 
             # DB process
@@ -323,9 +325,29 @@ in
               {
                 command = startScript;
                 is_daemon = true;
-                shutdown.command = "${config.package}/bin/pg_ctl -D ${config.dataDir} stop -m smart -w";
+                shutdown = {
+                  command = "${config.package}/bin/pg_ctl -D ${config.dataDir} stop -m smart -w";
+                  timeout_seconds = 10;
+                  parent_only = false;
+                };
+                is_foreground = false;
+                is_tty = false;
+                is_elevated = false;
                 readiness_probe = {
                   exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
+                  initial_delay_seconds = 5;
+                  period_seconds = 5;
+                  timeout_seconds = 3;
+                  success_threshold = 2;
+                  failure_threshold = 3;
+                };
+                liveness_probe = {
+                  exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
+                  initial_delay_seconds = 5;
+                  period_seconds = 5;
+                  timeout_seconds = 3;
+                  success_threshold = 2;
+                  failure_threshold = 3;
                 };
                 depends_on."${name}-init".condition = "process_completed_successfully";
               };
@@ -333,4 +355,5 @@ in
         };
     };
   };
+};
 }

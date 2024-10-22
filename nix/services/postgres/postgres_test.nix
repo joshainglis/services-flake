@@ -27,8 +27,10 @@
     ];
   };
   # avoid both the processes trying to create `data` directory at the same time
-  settings.processes."pg2-init".depends_on."pg1-init".condition = "process_completed_successfully";
-  settings.processes."pg3-init".depends_on."pg2-init".condition = "process_completed_successfully";
+  settings.processes = {
+    "pg2-init".depends_on."pg1-init".condition = "process_completed_successfully";
+    "pg3-init".depends_on."pg2-init".condition = "process_completed_successfully";
+  };
   settings.processes.test =
     let
       cfg = config.services.postgres."pg1";
