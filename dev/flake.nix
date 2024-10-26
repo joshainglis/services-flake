@@ -1,16 +1,24 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-    flake-parts.url = "github:hercules-ci/flake-parts";
     flake-root.url = "github:srid/flake-root";
-    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    flake-parts = {
+      url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
     pre-commit-hooks-nix = {
       url = "github:cachix/pre-commit-hooks.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.nixpkgs-stable.follows = "nixpkgs";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        nixpkgs-stable.follows = "nixpkgs";
+      };
     };
     # CI will override `services-flake` to run checks on the latest source
-    services-flake.url = "github:juspay/services-flake";
+    services-flake.url = "github:joshainglis/services-flake";
   };
   outputs = inputs@{ self, nixpkgs, flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
@@ -32,15 +40,19 @@
             nixpkgs-fmt.enable = true;
           };
         };
+
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            just
-            nixd
+          packages = [
+            pkgs.just
+            pkgs.nixd
             config.pre-commit.settings.tools.commitizen
+            pkgs.process-compose
+            (pkgs.python3.withPackages (ps: [ ps.psycopg ps.yoyo-migrations ]))
           ];
           inputsFrom = [
             config.treefmt.build.devShell
             config.pre-commit.devShell
+            config.flake-root.devShell
           ];
           shellHook = ''
             echo
