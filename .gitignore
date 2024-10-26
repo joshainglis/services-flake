@@ -2,7 +2,10 @@
 # created when `just test <service>` is used
 /result
 # created when `just run <service>` is used
-/test/data
+/test/.data
+/test/.logs
+/test/test
+
 
 # created when `just run ex-*` is used
 /example/share-services/pgweb/data/
