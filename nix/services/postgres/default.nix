@@ -20,7 +20,6 @@ in
               `services.postgres.package` is missing the `withPackages` attribute. Did you already add extensions to the package?
             ''
         else postgresPkg;
-
     };
 
     extensions = lib.mkOption {
@@ -39,6 +38,14 @@ in
         The available extensions are:
 
         ${lib.concatLines (builtins.map (x: "- " + x) (builtins.attrNames pkgs.postgresql.pkgs))}
+      '';
+    };
+
+    pgDataDir = lib.mkOption {
+      type = lib.types.str;
+      default = "${config.dataDir}/pgdata";
+      description = ''
+        The directory where the PostgreSQL data is stored.
       '';
     };
 
@@ -209,26 +216,52 @@ in
       };
 
     initialDatabases = lib.mkOption {
-      type = types.listOf (types.submodule {
-        options = {
-          name = lib.mkOption {
-            type = types.str;
-            description = ''
-              The name of the database to create.
-            '';
-          };
-          schemas = lib.mkOption {
-            type = types.nullOr (types.listOf types.path);
-            default = null;
-            description = ''
-              The initial list of schemas for the database; if null (the default),
-              an empty database is created.
+      type = types.listOf
+        (types.submodule {
+          options = {
+            name = lib.mkOption {
+              type = types.str;
+              description = ''
+                The name of the database to create.
+              '';
+            };
+            schemas = lib.mkOption {
+              type = types.nullOr (types.listOf types.path);
+              default = null;
+              description = ''
+                The initial list of schemas for the database; if null (the default),
+                an empty database is created.
 
-              If path is a directory, use `*.sql` files in name order.
-            '';
+                If path is a directory, use `*.sql` files in name order.
+              '';
+            };
+            yoyoMigrations = lib.mkOption
+              {
+                type = types.nullOr
+                  (types.submodule {
+                    options = {
+                      scripts_dirs = lib.mkOption {
+                        type = types.listOf types.path;
+                        description = ''
+                          The paths to the yoyo migrations scripts directories.
+                        '';
+                      };
+                      verbosity = lib.mkOption {
+                        type = types.int;
+                        default = 1;
+                        description = ''
+                          The verbosity level of the yoyo migrations. can be 0, 1, 2, 3.
+                        '';
+                      };
+                    };
+                  });
+                default = null;
+                description = ''
+                  The path to the yoyo migrations scripts directories.
+                '';
+              };
           };
-        };
-      });
+        });
       default = [ ];
       description = ''
         List of database names and their initial schemas that should be used to create databases on the first startup
@@ -239,6 +272,7 @@ in
           {
             name = "foodatabase";
             schemas = [ ./fooschemas ./bar.sql ];
+            yoyoMigrations = [ ./migrations/scripts ./migrations/scripts/archived ];
           }
           { name = "bardatabase"; }
         ]
@@ -290,7 +324,9 @@ in
             # DB initialization
             "${name}-init" =
               let
-                setupScript = import ./setup-script.nix { inherit config pkgs lib; };
+                setupScript = import ./setup-script.nix {
+                  inherit config pkgs lib;
+                };
               in
               {
                 command = setupScript;
@@ -306,13 +342,13 @@ in
                   runtimeInputs = [ config.package pkgs.coreutils ];
                   text = ''
                     set -euo pipefail
-                    PGDATA=$(readlink -f "${config.dataDir}")
+                    PGDATA=$(readlink -f "${config.pgDataDir}")
                     export PGDATA
                     ${ if config.socketDir != "" then ''
                       PGSOCKETDIR=$(readlink -f "${config.socketDir}")
-                      pg_ctl -D $PGDATA -o "-h $PGSOCKETDIR" -l $PGDATA/logfile start
+                      postgres -k "$PGSOCKETDIR"
                     '' else ''
-                      pg_ctl -D $PGDATA -l $PGDATA/logfile start
+                      postgres
                     ''}
                   '';
                 };
@@ -324,31 +360,11 @@ in
               in
               {
                 command = startScript;
-                is_daemon = true;
-                shutdown = {
-                  command = "${config.package}/bin/pg_ctl -D ${config.dataDir} stop -m smart -w";
-                  timeout_seconds = 10;
-                  parent_only = false;
-                };
-                is_foreground = false;
-                is_tty = false;
-                is_elevated = false;
-                readiness_probe = {
-                  exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
-                  initial_delay_seconds = 5;
-                  period_seconds = 5;
-                  timeout_seconds = 3;
-                  success_threshold = 2;
-                  failure_threshold = 3;
-                };
-                liveness_probe = {
-                  exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
-                  initial_delay_seconds = 5;
-                  period_seconds = 5;
-                  timeout_seconds = 3;
-                  success_threshold = 2;
-                  failure_threshold = 3;
-                };
+                is_daemon = false;
+                shutdown = { signal = 2; timeout_seconds = 5; parent_only = false; };
+                readiness_probe.exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
+                liveness_probe.exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
+                availability.restart = "on_failure";
                 depends_on."${name}-init".condition = "process_completed_successfully";
               };
           };

@@ -13,6 +13,7 @@
       {
         name = "sample-db";
         schemas = [ ./test.sql ];
+        yoyoMigrations = { scripts_dirs = [ ./yoyo_migrations ]; verbosity = 3; };
       }
     ];
   };
@@ -39,6 +40,8 @@
       command = pkgs.writeShellApplication {
         runtimeInputs = [ cfg.package pkgs.gnugrep ];
         text = ''
+          set -x
+
           echo 'SELECT version();' | psql -h 127.0.0.1
           echo 'SHOW hba_file;' | psql -h 127.0.0.1 | ${pkgs.gawk}/bin/awk 'NR==3' | grep '^ /nix/store'
 
@@ -50,6 +53,9 @@
 
           # schemas test
           echo "SELECT * from users where user_name = 'test_user';" | psql -h 127.0.0.1 -p 5433 -d sample-db | grep -q test_user
+
+          # yoyo migrations test
+          echo "SELECT 1 FROM pg_class where relname = 'test_table';" | psql -h "$(readlink -f ${config.services.postgres.pg2.socketDir})" -p "${toString config.services.postgres.pg2.port}" -d sample-db | grep -q 1
          
           # listen_addresses test
           echo "SELECT 1 FROM pg_database where datname = 'test-db';" | psql -h "$(readlink -f ${config.services.postgres.pg3.socketDir})" -d postgres | grep -q 1

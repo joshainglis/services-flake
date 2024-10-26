@@ -23,20 +23,20 @@ let
   setupInitialDatabases =
     if config.initialDatabases != [ ] then
       (lib.concatMapStrings
-        (database: ''
-          echo "Checking presence of database: ${database.name}"
+        (db: ''
+          echo "Checking presence of database: ${db.name}"
           # Create initial databases
           dbAlreadyExists=$(
-            echo "SELECT 1 as exists FROM pg_database WHERE datname = '${database.name}';" | \
+            echo "SELECT 1 as exists FROM pg_database WHERE datname = '${db.name}';" | \
             psql_with_args -d postgres | \
             grep -c 'exists = "1"' || true
           )
           echo "$dbAlreadyExists"
           if [ 1 -ne "$dbAlreadyExists" ]; then
-            echo "Creating database: ${database.name}"
-            echo 'create database "${database.name}";' | psql_with_args -d postgres
-            ${lib.optionalString (database.schemas != null)
-              (lib.concatMapStrings (schema: setupInitialSchema (database.name) schema) database.schemas)}
+            echo "Creating database: ${db.name}"
+            echo 'create database "${db.name}";' | psql_with_args -d postgres
+            ${lib.optionalString (db.schemas != null)
+              (lib.concatMapStrings (schema: setupInitialSchema (db.name) schema) db.schemas)}
           fi
         '')
         config.initialDatabases)
@@ -44,6 +44,26 @@ let
       lib.optionalString config.createDatabase ''
         echo "CREATE DATABASE ''${USER:-$(id -nu)};" | psql_with_args -d postgres '';
 
+  runYoyoMigrations =
+    if config.initialDatabases != [ ] then
+      (lib.concatMapStrings
+        (db:
+          if ((db.yoyoMigrations != null) && (db.yoyoMigrations.scripts_dirs != [ ])) then
+            let
+              verbosityFlag =
+                if db.yoyoMigrations.verbosity < 1 then ""
+                else "-" + lib.concatStrings (lib.genList (x: "v") (lib.min 3 db.yoyoMigrations.verbosity));
+
+              scriptsDirs = lib.concatStringsSep " " db.yoyoMigrations.scripts_dirs;
+            in
+            ''
+              echo "Applying yoyo migrations"
+              yoyo apply ${verbosityFlag} --batch --no-config-file --database "$(db_uri ${db.name})" ${scriptsDirs}
+            ''
+          else ""
+        )
+        config.initialDatabases)
+    else "";
 
   runInitialScript =
     let
@@ -72,22 +92,28 @@ let
   initdbArgs =
     config.initdbArgs
     ++ (lib.optionals (config.superuser != null) [ "-U" config.superuser ])
-    ++ [ "-D" config.dataDir ];
+    ++ [ "-D" config.pgDataDir ];
+
+  anyYoyoMigrations = lib.any (db: db.yoyoMigrations != null && db.yoyoMigrations.scripts_dirs != [ ]) config.initialDatabases;
+
 in
 (pkgs.writeShellApplication {
   name = "setup-postgres";
-  runtimeInputs = with pkgs; [ config.package coreutils gnugrep gawk findutils ];
+  runtimeInputs = with pkgs; [ config.package coreutils gnugrep gawk findutils (python3.withPackages (ps: [ ps.psycopg ps.yoyo-migrations ])) ];
   text = ''
     set -x
     # Execute the `psql` command with default arguments
     function psql_with_args() {
       psql ${lib.optionalString (config.superuser != null) "-U ${config.superuser}"} -v "ON_ERROR_STOP=1" "$@"
     }
+    function db_uri() {
+      echo "postgresql+psycopg://${lib.optionalString (config.superuser != null) "${config.superuser}"}@/$1?host=$PGHOST&port=$PGPORT"
+    }
     # Setup postgres ENVs
-    export PGDATA="${config.dataDir}"
+    export PGDATA="${config.pgDataDir}"
     export PGPORT="${toString config.port}"
     POSTGRES_RUN_INITIAL_SCRIPT="false"
-
+    POSTGRES_RUN_YOYO_MIGRATIONS="${if anyYoyoMigrations then "true" else "false"}"
 
     if [[ ! -d "$PGDATA" ]]; then
       initdb ${lib.concatStringsSep " " initdbArgs}
@@ -108,7 +134,7 @@ in
       fi
     ''}
 
-    if [[ "$POSTGRES_RUN_INITIAL_SCRIPT" = "true" ]]; then
+    if [[ "$POSTGRES_RUN_INITIAL_SCRIPT" = "true" ]] || [[ "$POSTGRES_RUN_YOYO_MIGRATIONS" = "true" ]]; then
       echo
       echo "PostgreSQL is setting up the initial database."
       echo
@@ -128,9 +154,14 @@ in
       trap 'remove_tmp_pg_init_sock_dir "$PGHOST"' EXIT
 
       pg_ctl -D "$PGDATA" -w start -o "-c unix_socket_directories=$PGHOST -c listen_addresses= -p ${toString config.port}"
+      if [[ "$POSTGRES_RUN_INITIAL_SCRIPT" = "true" ]]; then
       ${runInitialScript.before}
       ${setupInitialDatabases}
       ${runInitialScript.after}
+      fi
+
+      ${runYoyoMigrations}
+
       pg_ctl -D "$PGDATA" -m fast -w stop
       remove_tmp_pg_init_sock_dir "$PGHOST"
     else
