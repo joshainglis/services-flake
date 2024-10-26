@@ -1,6 +1,6 @@
 # Based on https://github.com/cachix/devenv/blob/main/src/modules/services/postgres.nix
 { name, config, pkgs, lib, ... }:
-with lib.types; let
+let
   inherit (lib) types;
 in
 {
