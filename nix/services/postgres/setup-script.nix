@@ -101,6 +101,8 @@ in
   name = "setup-postgres";
   runtimeInputs = with pkgs; [ config.package coreutils gnugrep gawk findutils (python3.withPackages (ps: [ ps.psycopg ps.yoyo-migrations ])) ];
   text = ''
+    set -e
+    set -o pipefail
     set -x
     # Execute the `psql` command with default arguments
     function psql_with_args() {
@@ -109,6 +111,22 @@ in
     function db_uri() {
       echo "postgresql+psycopg://${lib.optionalString (config.superuser != null) "${config.superuser}"}@/$1?host=$PGHOST&port=$PGPORT"
     }
+
+    function cleanup() {
+      local exit_code=$?
+      echo "Cleaning up..."
+      if [[ -d "$PGHOST" ]]; then
+        # Try to stop postgres if it's running
+        pg_ctl -D "$PGDATA" -m immediate -w stop || true
+        rm -rf "$PGHOST"
+        rm -rf "$PGDATA"
+      fi
+      exit $exit_code
+    }
+
+    # Set up cleanup trap for both ERR and EXIT
+    trap cleanup ERR EXIT
+
     # Setup postgres ENVs
     export PGDATA="${config.pgDataDir}"
     export PGPORT="${toString config.port}"
@@ -146,13 +164,6 @@ in
       }
       export PGHOST
 
-      function remove_tmp_pg_init_sock_dir() {
-        if [[ -d "$1" ]]; then
-          rm -rf "$1"
-        fi
-      }
-      trap 'remove_tmp_pg_init_sock_dir "$PGHOST"' EXIT
-
       pg_ctl -D "$PGDATA" -w start -o "-c unix_socket_directories=$PGHOST -c listen_addresses= -p ${toString config.port}"
       if [[ "$POSTGRES_RUN_INITIAL_SCRIPT" = "true" ]]; then
       ${runInitialScript.before}
@@ -163,7 +174,6 @@ in
       ${runYoyoMigrations}
 
       pg_ctl -D "$PGDATA" -m fast -w stop
-      remove_tmp_pg_init_sock_dir "$PGHOST"
     else
       echo
       echo "PostgreSQL database directory appears to contain a database; Skipping initialization"
