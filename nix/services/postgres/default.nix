@@ -69,6 +69,15 @@ in
         and returns the [postgres connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS)
       '';
     };
+    yoyoConnectionURI = lib.mkOption {
+      type = lib.types.functionTo lib.types.str;
+      readOnly = true;
+      default = { dbName, driver, ... }: "postgresql+${driver}://${if config.socketDir != "" then "" else ''${config.listen_addresses}:${builtins.toString config.port}''}/${dbName}${if config.socketDir != "" then ''?host=${config.socketDir}&port=${config.port}'' else ""}";
+      description = ''
+        A function that accepts an attrset overriding the connection parameters
+        and returns the [postgres connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS)
+      '';
+    };
 
     hbaConf =
       let
