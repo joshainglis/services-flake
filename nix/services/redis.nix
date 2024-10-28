@@ -49,6 +49,12 @@ in
       example = 600;
     };
 
+    logLevel = lib.mkOption {
+      type = types.enum [ "debug" "verbose" "notice" "warning" "nothing" ];
+      default = "notice";
+      description = "The log level for redis";
+    };
+
     extraConfig = lib.mkOption {
       type = types.lines;
       default = "";
@@ -62,13 +68,19 @@ in
         processes = {
           "${name}" =
             let
-              redisConfig = pkgs.writeText "redis.conf" ''
-                port ${toString config.port}
-                ${lib.optionalString (config.bind != null) "bind ${config.bind}"}
-                ${lib.optionalString (config.unixSocket != null) "unixsocket ${config.unixSocket}"}
-                ${lib.optionalString (config.unixSocket != null) "unixsocketperm ${builtins.toString config.unixSocketPerm}"}
-                ${config.extraConfig}
-              '';
+              transformedSocketPath =
+                if (config.unixSocket != null) then
+                  if (lib.hasPrefix "/" config.unixSocket) then
+                  # Already absolute path
+                    config.unixSocket
+                  else if (lib.hasPrefix "./" config.unixSocket) then
+                  # Relative path starting with ./
+                    "${config.dataDir}/${lib.removePrefix "./" config.unixSocket}"
+                  else
+                  # Relative path without ./
+                    "${config.dataDir}/${config.unixSocket}"
+                else
+                  null;
 
               startScript = pkgs.writeShellApplication {
                 name = "start-redis";
@@ -76,13 +88,30 @@ in
                 text = ''
                   set -euo pipefail
 
-                  export REDISDATA=${config.dataDir}
+                  export REDISDATADIR="${config.dataDir}/data"
+                  mkdir -p "$REDISDATADIR"
+                  DATADIR="$(readlink -f "$REDISDATADIR")"
 
-                  if [[ ! -d "$REDISDATA" ]]; then
-                    mkdir -p "$REDISDATA"
-                  fi
+                  # Create runtime dir for config
+                  RUNTIME_DIR="${config.dataDir}/run"
+                  mkdir -p "$RUNTIME_DIR"
 
-                  exec redis-server ${redisConfig} --dir "$REDISDATA"
+                  ${lib.optionalString (transformedSocketPath != null) ''
+                  SOCKET_DIR="$(dirname ${transformedSocketPath})"
+                  mkdir -p "$SOCKET_DIR"
+                  ''}
+
+                  # Create config file
+                  cat > "$RUNTIME_DIR/redis.conf" << EOF
+                  port ${toString config.port}
+                  ${lib.optionalString (config.bind != null) "bind ${config.bind}"}
+                  ${lib.optionalString (config.unixSocket != null) "unixsocket $(readlink -f ${transformedSocketPath})"}
+                  ${lib.optionalString (config.unixSocket != null) "unixsocketperm ${builtins.toString config.unixSocketPerm}"}
+                  loglevel ${config.logLevel}
+                  ${config.extraConfig}
+                  EOF
+
+                  exec redis-server "$RUNTIME_DIR/redis.conf" --dir "$DATADIR"
                 '';
               };
             in
@@ -90,18 +119,10 @@ in
               command = startScript;
 
               readiness_probe =
-                let
-                  # Transform `unixSocket` by prefixing `config.dataDir` if a relative path is used
-                  transformedSocketPath =
-                    if (config.unixSocket != null && (lib.hasPrefix "./" config.unixSocket)) then
-                      "${config.dataDir}/${config.unixSocket}"
-                    else
-                      config.unixSocket;
-                in
                 {
                   exec.command =
                     if (transformedSocketPath != null && config.port == 0) then
-                      "${config.package}/bin/redis-cli -s ${transformedSocketPath} ${toString config.port} ping"
+                      ''${config.package}/bin/redis-cli -s "$(readlink -f ${transformedSocketPath})" ping''
                     else
                       "${config.package}/bin/redis-cli -p ${toString config.port} ping";
                 };
