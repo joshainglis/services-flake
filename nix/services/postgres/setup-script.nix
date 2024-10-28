@@ -113,18 +113,17 @@ in
     }
 
     function cleanup() {
-      local exit_code=$?
-      echo "Cleaning up..."
-      if [[ -d "$PGHOST" ]]; then
-        # Try to stop postgres if it's running
-        pg_ctl -D "$PGDATA" -m immediate -w stop || true
-        rm -rf "$PGHOST"
-        rm -rf "$PGDATA"
-      fi
-      exit $exit_code
+        local exit_code=$?
+        echo "Cleaning up..."
+        if [[ -d "$PGHOST" ]]; then
+            # Try to stop postgres if it's running
+            pg_ctl -D "$PGDATA" -m immediate -w stop || true
+
+            rm -rf "$PGHOST"
+        fi
+        exit $exit_code
     }
 
-    # Set up cleanup trap for both ERR and EXIT
     trap cleanup ERR EXIT
 
     # Setup postgres ENVs

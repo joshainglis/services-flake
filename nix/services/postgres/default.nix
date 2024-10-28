@@ -350,7 +350,7 @@ in
                   name = "start-postgres";
                   runtimeInputs = [ config.package pkgs.coreutils ];
                   text = ''
-                    set -euo pipefail
+                    set -xeuo pipefail
                     PGDATA=$(readlink -f "${config.pgDataDir}")
                     export PGDATA
                     ${ if config.socketDir != "" then ''
