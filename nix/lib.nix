@@ -22,7 +22,7 @@
             description = "The directory where all data for `${service}.<name>` is stored";
           };
           working_dir = lib.mkOption {
-            type = types.nullOr types.str;
+            type = lib.types.nullOr lib.types.str;
             default = null;
             example = "/tmp";
             description = "The directory to run the process in.";
