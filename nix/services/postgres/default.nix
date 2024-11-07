@@ -69,6 +69,15 @@ in
         and returns the [postgres connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS)
       '';
     };
+
+    yoyoPackage = lib.mkOption {
+      type = types.package;
+      default = pkgs.python3.withPackages (ps: [ ps.yoyo-migrations ps.psycopg ]);
+      description = ''
+        The yoyo-migrations package.
+      '';
+    };
+
     yoyoConnectionURI = lib.mkOption {
       type = lib.types.functionTo lib.types.str;
       readOnly = true;
@@ -348,16 +357,16 @@ in
               let
                 startScript = pkgs.writeShellApplication {
                   name = "start-postgres";
-                  runtimeInputs = [ config.package pkgs.coreutils ];
+                  runtimeInputs = [ config.package pkgs.coreutils config.yoyoPackage ];
                   text = ''
                     set -xeuo pipefail
                     PGDATA=$(readlink -f "${config.pgDataDir}")
                     export PGDATA
                     ${ if config.socketDir != "" then ''
                       PGSOCKETDIR=$(readlink -f "${config.socketDir}")
-                      postgres -k "$PGSOCKETDIR"
+                      ${lib.getExe' config.package "postgres"} -k "$PGSOCKETDIR"
                     '' else ''
-                      postgres
+                      ${lib.getExe' config.package "postgres"}
                     ''}
                   '';
                 };
@@ -371,8 +380,8 @@ in
                 command = startScript;
                 is_daemon = false;
                 shutdown = { signal = 2; timeout_seconds = 5; parent_only = false; };
-                readiness_probe.exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
-                liveness_probe.exec.command = "${config.package}/bin/pg_isready ${lib.concatStringsSep " " pg_isreadyArgs}";
+                readiness_probe.exec.command = "${lib.getExe' config.package "pg_isready"} ${lib.concatStringsSep " " pg_isreadyArgs}";
+                liveness_probe.exec.command = "${lib.getExe' config.package "pg_isready"} ${lib.concatStringsSep " " pg_isreadyArgs}";
                 availability.restart = "on_failure";
                 depends_on."${name}-init".condition = "process_completed_successfully";
               };
