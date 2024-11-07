@@ -21,7 +21,7 @@
             default = "./.data/${name}";
             description = "The directory where all data for `${service}.<name>` is stored";
           };
-          working_dir = mkOption {
+          working_dir = lib.mkOption {
             type = types.nullOr types.str;
             default = null;
             example = "/tmp";
