@@ -1,4 +1,8 @@
-{ pkgs, config, ... }: {
+{
+  pkgs,
+  config,
+  ...
+}: {
   services.postgres."pg1" = {
     enable = true;
     initialScript.before = "CREATE USER bar;";
@@ -12,8 +16,12 @@
     initialDatabases = [
       {
         name = "sample-db";
-        schemas = [ ./test.sql ];
-        yoyoMigrations = { scripts_dirs = [ ./yoyo_migrations ]; verbosity = 3; };
+        schemas = [./test.sql];
+        yoyoMigrations = {
+          scripts_dirs = [./yoyo_migrations];
+          verbosity = 3;
+        };
+        postApplySchemas = [./postApply];
       }
     ];
   };
@@ -32,40 +40,38 @@
     "pg2-init".depends_on."pg1-init".condition = "process_completed_successfully";
     "pg3-init".depends_on."pg2-init".condition = "process_completed_successfully";
   };
-  settings.processes.test =
-    let
-      cfg = config.services.postgres."pg1";
-    in
-    {
-      command = pkgs.writeShellApplication {
-        runtimeInputs = [ cfg.package pkgs.gnugrep ];
-        text = ''
-          set -x
+  settings.processes.test = let
+    cfg = config.services.postgres."pg1";
+  in {
+    command = pkgs.writeShellApplication {
+      runtimeInputs = [cfg.package pkgs.gnugrep];
+      text = ''
+        set -x
 
-          echo 'SELECT version();' | psql -h 127.0.0.1
-          echo 'SHOW hba_file;' | psql -h 127.0.0.1 | ${pkgs.gawk}/bin/awk 'NR==3' | grep '^ /nix/store'
+        echo 'SELECT version();' | psql -h 127.0.0.1
+        echo 'SHOW hba_file;' | psql -h 127.0.0.1 | ${pkgs.gawk}/bin/awk 'NR==3' | grep '^ /nix/store'
 
-          # initialScript.before test
-          echo "SELECT 1 FROM pg_roles WHERE rolname = 'bar';" | psql -h 127.0.0.1 | grep -q 1
+        # initialScript.before test
+        echo "SELECT 1 FROM pg_roles WHERE rolname = 'bar';" | psql -h 127.0.0.1 | grep -q 1
 
-          # initialScript.after test
-          echo "SELECT 1 FROM pg_database WHERE datname = 'foo';" | psql -h 127.0.0.1 | grep -q 1
+        # initialScript.after test
+        echo "SELECT 1 FROM pg_database WHERE datname = 'foo';" | psql -h 127.0.0.1 | grep -q 1
 
-          # schemas test
-          echo "SELECT * from users where user_name = 'test_user';" | psql -h 127.0.0.1 -p 5433 -d sample-db | grep -q test_user
+        # schemas test
+        echo "SELECT * from users where user_name = 'test_user';" | psql -h 127.0.0.1 -p 5433 -d sample-db | grep -q test_user
 
-          # yoyo migrations test
-          echo "SELECT 1 FROM pg_class where relname = 'test_table';" | psql -h "$(readlink -f ${config.services.postgres.pg2.socketDir})" -p "${toString config.services.postgres.pg2.port}" -d sample-db | grep -q 1
-         
-          # listen_addresses test
-          echo "SELECT 1 FROM pg_database where datname = 'test-db';" | psql -h "$(readlink -f ${config.services.postgres.pg3.socketDir})" -d postgres | grep -q 1
-        '';
-        name = "postgres-test";
-      };
-      depends_on = {
-        "pg1".condition = "process_healthy";
-        "pg2".condition = "process_healthy";
-        "pg3".condition = "process_healthy";
-      };
+        # yoyo migrations test
+        echo "SELECT 1 FROM pg_class where relname = 'test_table';" | psql -h "$(readlink -f ${config.services.postgres.pg2.socketDir})" -p "${toString config.services.postgres.pg2.port}" -d sample-db | grep -q 1
+
+        # listen_addresses test
+        echo "SELECT 1 FROM pg_database where datname = 'test-db';" | psql -h "$(readlink -f ${config.services.postgres.pg3.socketDir})" -d postgres | grep -q 1
+      '';
+      name = "postgres-test";
     };
+    depends_on = {
+      "pg1".condition = "process_healthy";
+      "pg2".condition = "process_healthy";
+      "pg3".condition = "process_healthy";
+    };
+  };
 }

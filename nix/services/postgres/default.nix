@@ -1,9 +1,13 @@
 # Based on https://github.com/cachix/devenv/blob/main/src/modules/services/postgres.nix
-{ name, config, pkgs, lib, ... }:
-let
-  inherit (lib) types;
-in
 {
+  name,
+  config,
+  pkgs,
+  lib,
+  ...
+}: let
+  inherit (lib) types;
+in {
   options = {
     package = lib.mkOption {
       type = types.package;
@@ -11,7 +15,8 @@ in
       default = pkgs.postgresql;
       defaultText = lib.literalExpression "pkgs.postgresql";
       apply = postgresPkg:
-        if config.extensions != null then
+        if config.extensions != null
+        then
           if builtins.hasAttr "withPackages" postgresPkg
           then postgresPkg.withPackages config.extensions
           else
@@ -63,7 +68,7 @@ in
     connectionURI = lib.mkOption {
       type = lib.types.functionTo lib.types.str;
       readOnly = true;
-      default = { dbName, ... }: "postgres://${config.listen_addresses}:${builtins.toString config.port}/${dbName}";
+      default = {dbName, ...}: "postgres://${config.listen_addresses}:${builtins.toString config.port}/${dbName}";
       description = ''
         A function that accepts an attrset overriding the connection parameters
         and returns the [postgres connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS)
@@ -72,7 +77,7 @@ in
 
     yoyoPackage = lib.mkOption {
       type = types.package;
-      default = pkgs.python3.withPackages (ps: [ ps.yoyo-migrations ps.psycopg ]);
+      default = pkgs.python3.withPackages (ps: [ps.yoyo-migrations ps.psycopg]);
       description = ''
         The yoyo-migrations package.
       '';
@@ -81,28 +86,39 @@ in
     yoyoConnectionURI = lib.mkOption {
       type = lib.types.functionTo lib.types.str;
       readOnly = true;
-      default = { dbName, driver, ... }: "postgresql+${driver}://${if config.socketDir != "" then "" else ''${config.listen_addresses}:${builtins.toString config.port}''}/${dbName}${if config.socketDir != "" then ''?host=${config.socketDir}&port=${config.port}'' else ""}";
+      default = {
+        dbName,
+        driver,
+        ...
+      }: "postgresql+${driver}://${
+        if config.socketDir != ""
+        then ""
+        else "${config.listen_addresses}:${builtins.toString config.port}"
+      }/${dbName}${
+        if config.socketDir != ""
+        then "?host=${config.socketDir}&port=${config.port}"
+        else ""
+      }";
       description = ''
         A function that accepts an attrset overriding the connection parameters
         and returns the [postgres connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS)
       '';
     };
 
-    hbaConf =
-      let
-        hbaConfSubmodule = lib.types.submodule {
-          options = {
-            type = lib.mkOption { type = lib.types.str; };
-            database = lib.mkOption { type = lib.types.str; };
-            user = lib.mkOption { type = lib.types.str; };
-            address = lib.mkOption { type = lib.types.str; };
-            method = lib.mkOption { type = lib.types.str; };
-          };
+    hbaConf = let
+      hbaConfSubmodule = lib.types.submodule {
+        options = {
+          type = lib.mkOption {type = lib.types.str;};
+          database = lib.mkOption {type = lib.types.str;};
+          user = lib.mkOption {type = lib.types.str;};
+          address = lib.mkOption {type = lib.types.str;};
+          method = lib.mkOption {type = lib.types.str;};
         };
-      in
+      };
+    in
       lib.mkOption {
         type = lib.types.listOf hbaConfSubmodule;
-        default = [ ];
+        default = [];
         description = ''
           A list of objects that represent the entries in the pg_hba.conf file.
 
@@ -112,32 +128,79 @@ in
           https://www.postgresql.org/docs/current/auth-pg-hba-conf.html
         '';
         example = [
-          { type = "local"; database = "all"; user = "postgres"; address = ""; method = "md5"; }
-          { type = "host"; database = "all"; user = "all"; address = "0.0.0.0/0"; method = "md5"; }
+          {
+            type = "local";
+            database = "all";
+            user = "postgres";
+            address = "";
+            method = "md5";
+          }
+          {
+            type = "host";
+            database = "all";
+            user = "all";
+            address = "0.0.0.0/0";
+            method = "md5";
+          }
         ];
       };
-    hbaConfFile =
-      let
-        # Default pg_hba.conf entries
-        defaultHbaConf = [
-          { type = "local"; database = "all"; user = "all"; address = ""; method = "trust"; }
-          { type = "host"; database = "all"; user = "all"; address = "127.0.0.1/32"; method = "trust"; }
-          { type = "host"; database = "all"; user = "all"; address = "::1/128"; method = "trust"; }
-          { type = "local"; database = "replication"; user = "all"; address = ""; method = "trust"; }
-          { type = "host"; database = "replication"; user = "all"; address = "127.0.0.1/32"; method = "trust"; }
-          { type = "host"; database = "replication"; user = "all"; address = "::1/128"; method = "trust"; }
-        ];
+    hbaConfFile = let
+      # Default pg_hba.conf entries
+      defaultHbaConf = [
+        {
+          type = "local";
+          database = "all";
+          user = "all";
+          address = "";
+          method = "trust";
+        }
+        {
+          type = "host";
+          database = "all";
+          user = "all";
+          address = "127.0.0.1/32";
+          method = "trust";
+        }
+        {
+          type = "host";
+          database = "all";
+          user = "all";
+          address = "::1/128";
+          method = "trust";
+        }
+        {
+          type = "local";
+          database = "replication";
+          user = "all";
+          address = "";
+          method = "trust";
+        }
+        {
+          type = "host";
+          database = "replication";
+          user = "all";
+          address = "127.0.0.1/32";
+          method = "trust";
+        }
+        {
+          type = "host";
+          database = "replication";
+          user = "all";
+          address = "::1/128";
+          method = "trust";
+        }
+      ];
 
-        # Merge the default pg_hba.conf entries with the user-defined entries
-        hbaConf = defaultHbaConf ++ config.hbaConf;
+      # Merge the default pg_hba.conf entries with the user-defined entries
+      hbaConf = defaultHbaConf ++ config.hbaConf;
 
-        # Convert the pgHbaConf array to a string
-        hbaConfString = ''
-          # Generated by Nix
-          ${"# TYPE\tDATABASE\tUSER\tADDRESS\tMETHOD\n"}
-          ${lib.concatMapStrings (cnf: "  ${cnf.type}\t${cnf.database}\t${cnf.user}\t${cnf.address}\t${cnf.method}\n") hbaConf}
-        '';
-      in
+      # Convert the pgHbaConf array to a string
+      hbaConfString = ''
+        # Generated by Nix
+        ${"# TYPE\tDATABASE\tUSER\tADDRESS\tMETHOD\n"}
+        ${lib.concatMapStrings (cnf: "  ${cnf.type}\t${cnf.database}\t${cnf.user}\t${cnf.address}\t${cnf.method}\n") hbaConf}
+      '';
+    in
       lib.mkOption {
         type = lib.types.package;
         internal = true;
@@ -180,61 +243,60 @@ in
 
     initdbArgs = lib.mkOption {
       type = types.listOf types.lines;
-      default = [ "--locale=C" "--encoding=UTF8" ];
-      example = [ "--data-checksums" "--allow-group-access" ];
+      default = ["--locale=C" "--encoding=UTF8"];
+      example = ["--data-checksums" "--allow-group-access"];
       description = ''
         Additional arguments passed to `initdb` during data dir
         initialisation.
       '';
     };
 
-    defaultSettings =
-      lib.mkOption {
-        type = with lib.types; attrsOf (oneOf [ bool float int str ]);
-        internal = true;
-        readOnly = true;
-        description = ''
-          Default configuration for `postgresql.conf`. `settings` can override these values.
-        '';
-        default = {
-          listen_addresses = config.listen_addresses;
-          port = config.port;
-          unix_socket_directories = config.socketDir;
-          hba_file = "${config.hbaConfFile}";
-        };
+    defaultSettings = lib.mkOption {
+      type = with lib.types; attrsOf (oneOf [bool float int str]);
+      internal = true;
+      readOnly = true;
+      description = ''
+        Default configuration for `postgresql.conf`. `settings` can override these values.
+      '';
+      default = {
+        listen_addresses = config.listen_addresses;
+        port = config.port;
+        unix_socket_directories = config.socketDir;
+        hba_file = "${config.hbaConfFile}";
       };
+    };
 
-    settings =
-      lib.mkOption {
-        type = with lib.types; attrsOf (oneOf [ bool float int str ]);
-        default = { };
-        description = ''
-          PostgreSQL configuration. Refer to
-          <https://www.postgresql.org/docs/11/config-setting.html#CONFIG-SETTING-CONFIGURATION-FILE>
-          for an overview of `postgresql.conf`.
+    settings = lib.mkOption {
+      type = with lib.types; attrsOf (oneOf [bool float int str]);
+      default = {};
+      description = ''
+        PostgreSQL configuration. Refer to
+        <https://www.postgresql.org/docs/11/config-setting.html#CONFIG-SETTING-CONFIGURATION-FILE>
+        for an overview of `postgresql.conf`.
 
-          String values will automatically be enclosed in single quotes. Single quotes will be
-          escaped with two single quotes as described by the upstream documentation linked above.
-        '';
-        default = {
-          listen_addresses = config.listen_addresses;
-          port = config.port;
-          unix_socket_directories = lib.mkDefault config.socketDir;
-          hba_file = "${config.hbaConfFile}";
-        };
-        example = lib.literalExpression ''
-          {
-            log_connections = true;
-            log_statement = "all";
-            logging_collector = true
-            log_disconnections = true
-            log_destination = lib.mkForce "syslog";
-          }
-        '';
+        String values will automatically be enclosed in single quotes. Single quotes will be
+        escaped with two single quotes as described by the upstream documentation linked above.
+      '';
+      default = {
+        listen_addresses = config.listen_addresses;
+        port = config.port;
+        unix_socket_directories = lib.mkDefault config.socketDir;
+        hba_file = "${config.hbaConfFile}";
       };
+      example = lib.literalExpression ''
+        {
+          log_connections = true;
+          log_statement = "all";
+          logging_collector = true
+          log_disconnections = true
+          log_destination = lib.mkForce "syslog";
+        }
+      '';
+    };
 
     initialDatabases = lib.mkOption {
-      type = types.listOf
+      type =
+        types.listOf
         (types.submodule {
           options = {
             name = lib.mkOption {
@@ -244,7 +306,7 @@ in
               '';
             };
             schemas = lib.mkOption {
-              type = types.nullOr (types.listOf types.path);
+              type = types.nullOr (types.listOf (types.oneOf [types.path types.str]));
               default = null;
               description = ''
                 The initial list of schemas for the database; if null (the default),
@@ -253,13 +315,15 @@ in
                 If path is a directory, use `*.sql` files in name order.
               '';
             };
-            yoyoMigrations = lib.mkOption
+            yoyoMigrations =
+              lib.mkOption
               {
-                type = types.nullOr
+                type =
+                  types.nullOr
                   (types.submodule {
                     options = {
                       scripts_dirs = lib.mkOption {
-                        type = types.listOf types.path;
+                        type = types.nullOr (types.listOf (types.oneOf [types.path types.str]));
                         description = ''
                           The paths to the yoyo migrations scripts directories.
                         '';
@@ -278,9 +342,16 @@ in
                   The path to the yoyo migrations scripts directories.
                 '';
               };
+            postApplySchemas = lib.mkOption {
+              type = types.nullOr (types.listOf (types.oneOf [types.path types.str]));
+              default = [];
+              description = ''
+                The list of files to run after applying the yoyo migrations.
+              '';
+            };
           };
         });
-      default = [ ];
+      default = [];
       description = ''
         List of database names and their initial schemas that should be used to create databases on the first startup
         of Postgres. The schema attribute is optional: If not specified, an empty database is created.
@@ -298,7 +369,7 @@ in
     };
 
     initialScript = lib.mkOption {
-      type = types.submodule ({ config, ... }: {
+      type = types.submodule ({config, ...}: {
         options = {
           before = lib.mkOption {
             type = types.nullOr types.str;
@@ -327,7 +398,10 @@ in
           };
         };
       });
-      default = { before = null; after = null; };
+      default = {
+        before = null;
+        after = null;
+      };
       description = ''
         Initial SQL commands to run during database initialization. This can be multiple
         SQL expressions separated by a semi-colon.
@@ -336,58 +410,70 @@ in
   };
   config = {
     outputs = {
-      settings =
-        {
-          processes = {
-            # DB initialization
-            "${name}-init" =
-              let
-                setupScript = import ./setup-script.nix {
-                  inherit config pkgs lib;
-                };
-              in
-              {
-                command = setupScript;
-                log_location = "${config.logDir}/${name}-init.log";
-                availability.restart = "exit_on_failure";
-                shutdown = { signal = 15; parent_only = false; };
-              };
+      settings = {
+        processes = {
+          # DB initialization
+          "${name}-init" = let
+            setupScript = import ./setup-script.nix {
+              inherit config pkgs lib;
+            };
+          in {
+            command = setupScript;
+            log_location = "${config.logDir}/${name}-init.log";
+            availability.restart = "exit_on_failure";
+            shutdown = {
+              signal = 15;
+              parent_only = false;
+            };
+          };
 
-            # DB process
-            ${name} =
-              let
-                startScript = pkgs.writeShellApplication {
-                  name = "start-postgres";
-                  runtimeInputs = [ config.package pkgs.coreutils config.yoyoPackage ];
-                  text = ''
-                    set -xeuo pipefail
-                    PGDATA=$(readlink -f "${config.pgDataDir}")
-                    export PGDATA
-                    ${ if config.socketDir != "" then ''
-                      PGSOCKETDIR=$(readlink -f "${config.socketDir}")
-                      ${lib.getExe' config.package "postgres"} -k "$PGSOCKETDIR"
-                    '' else ''
-                      ${lib.getExe' config.package "postgres"}
-                    ''}
-                  '';
-                };
-                pg_isreadyArgs = [
-                  (if config.socketDir != "" then "-h $(readlink -f \"${config.socketDir}\")" else "-h ${config.listen_addresses}")
-                  "-p ${toString config.port}"
-                  "-d template1"
-                ] ++ (lib.optional (config.superuser != null) "-U ${config.superuser}");
-              in
-              {
-                command = startScript;
-                is_daemon = false;
-                shutdown = { signal = 2; timeout_seconds = 5; parent_only = false; };
-                readiness_probe.exec.command = "${lib.getExe' config.package "pg_isready"} ${lib.concatStringsSep " " pg_isreadyArgs}";
-                liveness_probe.exec.command = "${lib.getExe' config.package "pg_isready"} ${lib.concatStringsSep " " pg_isreadyArgs}";
-                availability.restart = "on_failure";
-                depends_on."${name}-init".condition = "process_completed_successfully";
-              };
+          # DB process
+          ${name} = let
+            startScript = pkgs.writeShellApplication {
+              name = "start-postgres";
+              runtimeInputs = [config.package pkgs.coreutils config.yoyoPackage];
+              text = ''
+                set -xeuo pipefail
+                PGDATA=$(readlink -f "${config.pgDataDir}")
+                export PGDATA
+                ${
+                  if config.socketDir != ""
+                  then ''
+                    PGSOCKETDIR=$(readlink -f "${config.socketDir}")
+                    ${lib.getExe' config.package "postgres"} -k "$PGSOCKETDIR"
+                  ''
+                  else ''
+                    ${lib.getExe' config.package "postgres"}
+                  ''
+                }
+              '';
+            };
+            pg_isreadyArgs =
+              [
+                (
+                  if config.socketDir != ""
+                  then "-h $(readlink -f \"${config.socketDir}\")"
+                  else "-h ${config.listen_addresses}"
+                )
+                "-p ${toString config.port}"
+                "-d template1"
+              ]
+              ++ (lib.optional (config.superuser != null) "-U ${config.superuser}");
+          in {
+            command = startScript;
+            is_daemon = false;
+            shutdown = {
+              signal = 2;
+              timeout_seconds = 5;
+              parent_only = false;
+            };
+            readiness_probe.exec.command = "${lib.getExe' config.package "pg_isready"} ${lib.concatStringsSep " " pg_isreadyArgs}";
+            liveness_probe.exec.command = "${lib.getExe' config.package "pg_isready"} ${lib.concatStringsSep " " pg_isreadyArgs}";
+            availability.restart = "on_failure";
+            depends_on."${name}-init".condition = "process_completed_successfully";
           };
         };
+      };
     };
   };
 }
