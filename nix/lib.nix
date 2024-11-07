@@ -21,6 +21,12 @@
             default = "./.data/${name}";
             description = "The directory where all data for `${service}.<name>` is stored";
           };
+          working_dir = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "/tmp";
+            description = "The directory to run the process in.";
+          };
           logDir = lib.mkOption {
             type = lib.types.str;
             default = "./.logs/${name}";
@@ -39,6 +45,7 @@
               description = "Default settings for all processes under the ${service} service";
               default = {
                 namespace = lib.mkDefault config.namespace;
+                working_dir = lib.mkDefault config.working_dir;
                 is_daemon = lib.mkDefault false;
                 is_foreground = lib.mkDefault false;
                 is_tty = lib.mkDefault false;

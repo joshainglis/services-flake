@@ -348,6 +348,7 @@ in
               in
               {
                 command = setupScript;
+                log_location = "${config.logDir}/${name}-init.log";
                 availability.restart = "exit_on_failure";
                 shutdown = { signal = 15; parent_only = false; };
               };
