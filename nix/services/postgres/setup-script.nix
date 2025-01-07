@@ -127,7 +127,7 @@ in
     set -x
     # Execute the `psql` command with default arguments
     function psql_with_args() {
-        local error_stop=${ERROR_STOP:-1}  # Default to 1 if not set
+        local error_stop=''${ERROR_STOP:-1}  # Default to 1 if not set
         ${lib.getExe' config.package "psql"} ${lib.optionalString (config.superuser != null) "-U ${config.superuser}"} -v "ON_ERROR_STOP=$error_stop" "$@"
     }
     function db_uri() {
