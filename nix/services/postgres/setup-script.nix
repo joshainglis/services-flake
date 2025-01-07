@@ -1,14 +1,19 @@
-{
-  config,
-  pkgs,
-  lib,
-}: let
-  runSchemas = dbName: schema: ''
-    echo "Applying database schema on ${dbName}"
+{ config
+, pkgs
+, lib
+,
+}:
+let
+  restoreFromDump = lib.optionalString (config.restoreFromDump != null) ''
+    echo "Restoring database from dump file: ${config.restoreFromDump.file}"
+    ${lib.getExe' pkgs.gawk "awk"} 'NF' "${config.restoreFromDump.file}" | ERROR_STOP=${ if config.restoreFromDump.stopOnError then "1" else "0" } psql_with_args -d postgres
+  '';
+  runSchemas = db: schema: ''
+    echo "Applying database schema on ${db.name}"
     if [ -f "${schema}" ]
     then
       echo "Running file ${schema}"
-      ${lib.getExe' pkgs.gawk "awk"} 'NF' "${schema}" | psql_with_args -d ${dbName}
+      ${lib.getExe' pkgs.gawk "awk"} 'NF' "${schema}" | ERROR_STOP=${ if db.stopOnError then "1" else "0" } psql_with_args -d ${db.name}
     elif [ -d "${schema}" ]
     then
       # Read sql files in version order. Apply one file
@@ -16,7 +21,7 @@
       # doesn't end in a ;.
       find "${schema}"/*.sql | while read -r f ; do
         echo "Applying sql file: $f"
-        ${lib.getExe' pkgs.gawk "awk"} 'NF' "$f" | psql_with_args -d ${dbName}
+        ${lib.getExe' pkgs.gawk "awk"} 'NF' "$f" | ERROR_STOP=${ if db.stopOnError then "1" else "0" } psql_with_args -d ${db.name}
       done
     else
       echo "ERROR: Could not determine how to apply schema with ${schema}"
@@ -24,7 +29,7 @@
     fi
   '';
   setupInitialDatabases =
-    if config.initialDatabases != []
+    if config.initialDatabases != [ ]
     then
       (lib.concatMapStrings
         (db: ''
@@ -40,58 +45,60 @@
             echo "Creating database: ${db.name}"
             echo 'create database "${db.name}";' | psql_with_args -d postgres
             ${lib.optionalString (db.schemas != null)
-            (lib.concatMapStrings (schema: runSchemas (db.name) schema) db.schemas)}
+            (lib.concatMapStrings (schema: runSchemas db schema) db.schemas)}
           fi
         '')
         config.initialDatabases)
-    else
-      lib.optionalString config.createDatabase ''
-        echo "CREATE DATABASE ''${USER:-$(id -nu)};" | psql_with_args -d postgres '';
+    else lib.optionalString config.createDatabase ''echo "CREATE DATABASE ''${USER:-$(id -nu)};" | psql_with_args -d postgres '';
 
   runPostApply =
-    if config.initialDatabases != []
+    if config.initialDatabases != [ ]
     then
       (lib.concatMapStrings
         (db: ''
           ${lib.optionalString (db.postApplySchemas != null)
-            (lib.concatMapStrings (schema: runSchemas (db.name) schema) db.postApplySchemas)}
+            (lib.concatMapStrings (schema: runSchemas db schema) db.postApplySchemas)}
         '')
         config.initialDatabases)
     else "";
 
   runYoyoMigrations =
-    if config.initialDatabases != []
+    if config.initialDatabases != [ ]
     then
       (lib.concatMapStrings
         (
           db:
-            if ((db.yoyoMigrations != null) && (db.yoyoMigrations.scripts_dirs != []))
-            then let
+          if ((db.yoyoMigrations != null) && (db.yoyoMigrations.scripts_dirs != [ ]))
+          then
+            let
               verbosityFlag =
                 if db.yoyoMigrations.verbosity < 1
                 then ""
                 else "-" + lib.concatStrings (lib.genList (x: "v") (lib.min 3 db.yoyoMigrations.verbosity));
 
               scriptsDirs = lib.concatStringsSep " " db.yoyoMigrations.scripts_dirs;
-            in ''
+            in
+            ''
               echo "Applying yoyo migrations"
               ${lib.getExe' config.yoyoPackage "yoyo"} apply ${verbosityFlag} --batch --no-config-file --database "$(db_uri ${db.name})" ${scriptsDirs}
             ''
-            else ""
+          else ""
         )
         config.initialDatabases)
     else "";
 
-  runInitialScript = let
-    scriptCmd = sqlScript: ''
-      echo "${sqlScript}" | psql_with_args -d postgres
-    '';
-  in {
-    before = with config.initialScript;
-      lib.optionalString (before != null) (scriptCmd before);
-    after = with config.initialScript;
-      lib.optionalString (after != null) (scriptCmd after);
-  };
+  runInitialScript =
+    let
+      scriptCmd = sqlScript: ''
+        echo "${sqlScript}" | psql_with_args -d postgres
+      '';
+    in
+    {
+      before = with config.initialScript;
+        lib.optionalString (before != null) (scriptCmd before);
+      after = with config.initialScript;
+        lib.optionalString (after != null) (scriptCmd after);
+    };
   toStr = value:
     if true == value
     then "yes"
@@ -106,20 +113,22 @@
 
   initdbArgs =
     config.initdbArgs
-    ++ (lib.optionals (config.superuser != null) ["-U" config.superuser])
-    ++ ["-D" config.pgDataDir];
+    ++ (lib.optionals (config.superuser != null) [ "-U" config.superuser ])
+    ++ [ "-D" config.pgDataDir ];
 
-  anyYoyoMigrations = lib.any (db: db.yoyoMigrations != null && db.yoyoMigrations.scripts_dirs != []) config.initialDatabases;
-in (pkgs.writeShellApplication {
+  anyYoyoMigrations = lib.any (db: db.yoyoMigrations != null && db.yoyoMigrations.scripts_dirs != [ ]) config.initialDatabases;
+in
+(pkgs.writeShellApplication {
   name = "setup-postgres";
-  runtimeInputs = with pkgs; [config.package coreutils gnugrep gawk findutils (python3.withPackages (ps: [ps.psycopg ps.yoyo-migrations]))];
+  runtimeInputs = with pkgs; [ config.package coreutils gnugrep gawk findutils (python3.withPackages (ps: [ ps.psycopg ps.yoyo-migrations ])) ];
   text = ''
     set -e
     set -o pipefail
     set -x
     # Execute the `psql` command with default arguments
     function psql_with_args() {
-      ${lib.getExe' config.package "psql"} ${lib.optionalString (config.superuser != null) "-U ${config.superuser}"} -v "ON_ERROR_STOP=1" "$@"
+        local error_stop=${ERROR_STOP:-1}  # Default to 1 if not set
+        ${lib.getExe' config.package "psql"} ${lib.optionalString (config.superuser != null) "-U ${config.superuser}"} -v "ON_ERROR_STOP=$error_stop" "$@"
     }
     function db_uri() {
       echo "postgresql+psycopg://${lib.optionalString (config.superuser != null) "${config.superuser}"}@/$1?host=$PGHOST&port=$PGPORT"
@@ -186,6 +195,7 @@ in (pkgs.writeShellApplication {
       ${lib.getExe' config.package "pg_ctl"} -D "$PGDATA" -w start -o "-c unix_socket_directories=$PGHOST -c listen_addresses= -p ${toString config.port}"
       if [[ "$POSTGRES_RUN_INITIAL_SCRIPT" = "true" ]]; then
       ${runInitialScript.before}
+      ${restoreFromDump}
       ${setupInitialDatabases}
       ${runInitialScript.after}
       fi
